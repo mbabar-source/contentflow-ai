@@ -1,6 +1,8 @@
 # We import FastAPI from the fastapi package.
 # FastAPI is the framework that helps us create API endpoints.
 from fastapi import FastAPI
+# We import our database setup to check that the database connection code works.
+from app.database import Base, engine
 
 # Here we create the FastAPI application object.
 # This "app" object is the main entry point of our backend.
