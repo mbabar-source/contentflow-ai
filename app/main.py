@@ -26,3 +26,14 @@ def read_root():
         "next_step": "Database, AI, RAG, and frontend will be added later",
 
     }
+
+# This is a health check endpoint.
+#  It is used to check if the backend server is running correctly.
+
+@app.get("/health")
+def health_check():
+    # This reponse tell us that the backend is alive and working.
+    return {
+        "status": "ok",
+        "message": "ContentFlow AI backend is running"
+    }
