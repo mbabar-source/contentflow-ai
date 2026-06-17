@@ -1,16 +1,32 @@
 # We import FastAPI from the fastapi package.
 # FastAPI is the framework that helps us create API endpoints.
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+
+# Session is used for type hints for database sessions.
+from sqlalchemy.orm import Session
 
 # We import our database setup to check that the database connection code works.
-from app.database import Base, engine
+from app.database import Base, engine, SessionLocal
 
 # We import models so SQLAlchemy knows which tables exist.
 from app import models
 
+# We import schemas for request and response validation.
+from app import schemas
+
 # This creates the database tables from our SQLAlchemy models.
 # If the tables already exist, SQLAlchemy will not create them again.
 Base.metadata.create_all(bind=engine)
+
+# This function creates a database session for each request.
+# It gives the endpoint access to the database and closes the session after the request is finished.
+def get_db():
+    db = SessionLocal()
+
+    try:
+        yield db
+    finally:
+        db.close()
 
 # Here we create the FastAPI application object.
 # This "app" object is the main entry point of our backend.
@@ -47,3 +63,38 @@ def health_check():
         "status": "ok",
         "message": "ContentFlow AI backend is running"
     }
+
+# This endpoint creates a new source and saves it into the database.
+@app.post("/sources", response_model=schemas.SourceResponse)
+def create_source(
+    source: schemas.SourceCreate,
+    db: Session = Depends(get_db)
+):
+    # Create a new Source database object using the data from the request body.
+    new_source = models.Source(
+        title=source.title,
+        body=source.body,
+        source_url=source.source_url,
+        platform=source.platform,
+        topic=source.topic,
+    )
+
+    # Add the new source object to the database session.
+    db.add(new_source)
+
+    # commit saves the new source permanently into the database.
+    db.commit()
+
+    # Refresh updates the python object with database-generated values like id and created at.
+    db.refresh(new_source)
+
+    # Return the saved source as the API response.
+    return new_source
+
+@app.get("/sources", response_model=list[schemas.SourceResponse])
+def get_sources(db: Session = Depends(get_db)):
+    # Query the sources table and return all rows.
+    sources = db.query(models.Source).all()
+
+    #FastAPI converts the list of database objects into JSON
+    return sources
