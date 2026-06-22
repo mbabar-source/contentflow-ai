@@ -1,3 +1,4 @@
+from app.ai_service import check_openai_api_key
 # We import FastAPI from the fastapi package.
 # FastAPI is the framework that helps us create API endpoints.
 from fastapi import FastAPI, Depends
@@ -265,3 +266,10 @@ def generate_ideas(
 
     # Step 8: Return the saved trend idea.
     return new_trend_idea
+
+# This endpoint checks whether the OpenAI API key is loaded.
+# it does not show the real key for security reasons.
+
+@app.get("/check-openai-key")
+def check_openai_key():
+    return check_openai_api_key()
