@@ -56,6 +56,25 @@ def simulate_source_collection(topic: str):
     ]
 
 
+# This function creates a beginner-friendly fake AI result.
+# Later, we will replace this with a real OpenAI API call.
+def generate_fake_content_idea(topic: str, sources: list[models.Source]):
+    # Collect source IDs so we know which saved sources helped create this idea.
+    source_ids = ",".join(str(source.id) for source in sources)
+
+    # Create a structured idea using the topic and saved source discussions.
+    return {
+        "topic": topic,
+        "title": f"Content opportunities around {topic}",
+        "summary": f"Based on saved source discussions, people are looking for practical, simple, and useful guidance about {topic}.",
+        "trend_category": "Content Inspiration",
+        "linkedin_post_idea": f"Write a LinkedIn post about the common problems people face with {topic} and share 3 practical lessons.",
+        "youtube_video_idea": f"Create a YouTube video titled: Beginner-friendly guide to {topic}: problems, trends, and content ideas.",
+        "blog_article_idea": f"Write a blog article explaining what people are discussing about {topic} and how creators can turn those discussions into content.",
+        "source_ids": source_ids,
+    }
+
+
 # Here we create the FastAPI application object.
 # This "app" object is the main entry point of our backend.
 app = FastAPI(
@@ -170,3 +189,79 @@ def collect_sources(
 
     # Step 7: Return the saved sources.
     return saved_sources
+
+
+# This endpoint reads all generated trend ideas from the database.
+@app.get("/trend-ideas", response_model=list[schemas.TrendIdeaResponse])
+def get_trend_ideas(db: Session = Depends(get_db)):
+    # Query the trend_ideas table and return all rows.
+    trend_ideas = db.query(models.TrendIdea).all()
+
+    # FastAPI converts the list of database objects into JSON.
+    return trend_ideas
+
+
+# This endpoint generates content ideas for a topic.
+# It first checks saved sources. If no sources exist, it collects simulated sources automatically.
+@app.post("/generate-ideas", response_model=schemas.TrendIdeaResponse)
+def generate_ideas(
+    request: schemas.TopicRequest,
+    db: Session = Depends(get_db)
+):
+    # Step 1: Get the topic from the request body.
+    topic = request.topic
+
+    # Step 2: Search the database for existing sources with this topic.
+    existing_sources = db.query(models.Source).filter(
+        models.Source.topic == topic
+    ).all()
+
+    # Step 3: If no sources exist for this topic, collect simulated sources automatically.
+    if not existing_sources:
+        collected_sources = simulate_source_collection(topic)
+        saved_sources = []
+
+        for source_data in collected_sources:
+            new_source = models.Source(
+                title=source_data["title"],
+                body=source_data["body"],
+                source_url=source_data["source_url"],
+                platform=source_data["platform"],
+                topic=source_data["topic"],
+            )
+
+            db.add(new_source)
+            saved_sources.append(new_source)
+
+        db.commit()
+
+        for source in saved_sources:
+            db.refresh(source)
+
+        sources_for_idea = saved_sources
+    else:
+        # Step 4: If sources already exist, use them for idea generation.
+        sources_for_idea = existing_sources
+
+    # Step 5: Generate a structured fake AI result using the sources.
+    idea_data = generate_fake_content_idea(topic, sources_for_idea)
+
+    # Step 6: Convert the generated idea into a SQLAlchemy TrendIdea object.
+    new_trend_idea = models.TrendIdea(
+        topic=idea_data["topic"],
+        title=idea_data["title"],
+        summary=idea_data["summary"],
+        trend_category=idea_data["trend_category"],
+        linkedin_post_idea=idea_data["linkedin_post_idea"],
+        youtube_video_idea=idea_data["youtube_video_idea"],
+        blog_article_idea=idea_data["blog_article_idea"],
+        source_ids=idea_data["source_ids"],
+    )
+
+    # Step 7: Save the generated trend idea into the database.
+    db.add(new_trend_idea)
+    db.commit()
+    db.refresh(new_trend_idea)
+
+    # Step 8: Return the saved trend idea.
+    return new_trend_idea

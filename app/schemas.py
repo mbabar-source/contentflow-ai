@@ -36,3 +36,21 @@ class SourceResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+class TrendIdeaResponse(BaseModel):
+    # This schema defines what our API returns after reading or generating a trend idea.
+    id: int
+    topic: str
+    title: str
+    summary: str
+    trend_category: str
+    linkedin_post_idea: str
+    youtube_video_idea: str
+    blog_article_idea: str
+    source_ids: Optional[str] = None
+    created_at: datetime
+
+    # This setting allows Pydantic to read data from SQLAlchemy objects.
+    model_config = {
+        "from_attributes": True
+    }
