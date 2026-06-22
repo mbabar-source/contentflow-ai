@@ -28,6 +28,34 @@ def get_db():
     finally:
         db.close()
 
+# This function simulates automatic source collection.
+# Later, we can replace this with real Reddit, forum, or web API collection.
+def simulate_source_collection(topic: str):
+    return [
+        {
+            "title": f"People are asking for better ideas about {topic}",
+            "body": f"Many users say they struggle to find fresh and useful content ideas about {topic}. They want simple, practical, and engaging post ideas.",
+            "source_url": "https://example.com/reddit-style-post",
+            "platform": "Reddit",
+            "topic": topic,
+        },
+        {
+            "title": f"Common problems beginners face with {topic}",
+            "body": f"Forum discussions show that beginners interested in {topic} often feel overwhelmed and do not know where to start.",
+            "source_url": "https://example.com/forum-style-post",
+            "platform": "Forum",
+            "topic": topic,
+        },
+        {
+            "title": f"Trending content opportunities in {topic}",
+            "body": f"Blog-style content suggests that audiences are looking for clear tips, personal stories, mistakes to avoid, and step-by-step guidance about {topic}.",
+            "source_url": "https://example.com/blog-style-post",
+            "platform": "Blog",
+            "topic": topic,
+        },
+    ]
+
+
 # Here we create the FastAPI application object.
 # This "app" object is the main entry point of our backend.
 app = FastAPI(
@@ -98,3 +126,47 @@ def get_sources(db: Session = Depends(get_db)):
 
     #FastAPI converts the list of database objects into JSON
     return sources
+
+# This endpoint automatically collects simulated sources for a topic
+# and saves them into the database.
+@app.post("/collect-sources", response_model=list[schemas.SourceResponse])
+def collect_sources(
+    request: schemas.TopicRequest,
+    db: Session = Depends(get_db)
+):
+    # Step 1: Get the topic from the request body.
+    topic = request.topic
+
+    # Step 2: Simulate collecting source posts related to the topic.
+    collected_sources = simulate_source_collection(topic)
+
+    # Step 3: Create an empty list to store the saved database objects.
+    saved_sources = []
+
+    # Step 4: Loop through each collected source dictionary.
+    for source_data in collected_sources:
+        # Convert the dictionary into a SQLAlchemy Source object
+        new_source = models.Source(
+            title=source_data["title"],
+            body=source_data["body"],
+            source_url=source_data["source_url"],
+            platform=source_data["platform"],
+            topic=source_data["topic"],
+        )
+
+        # Add the new source to the database session.
+        db.add(new_source)
+
+        # save this object in our list so we can return it later.
+        saved_sources.append(new_source)
+
+    # step5: commit once after adding all sources.
+    # This saves all collected sources permenantly.
+    db.commit()
+
+    # Step 6: Refresh each saved source so it gets id and created_at.
+    for source in saved_sources:
+        db.refresh(source)
+
+    # Step 7: Return the saved sources.
+    return saved_sources

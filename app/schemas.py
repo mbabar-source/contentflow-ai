@@ -8,6 +8,10 @@ from datetime import datetime
 # Optional means the field can be empty / None.
 from typing import Optional
 
+class TopicRequest(BaseModel):
+    # This schema is used when the user sends only a topic.
+    # Example: {"topic":"content creation")
+    topic: str
 
 class SourceCreate(BaseModel):
     # This schema defines what data the user must send when creating a new source
