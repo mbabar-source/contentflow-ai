@@ -1,7 +1,7 @@
-from app.ai_service import check_openai_api_key
+from app.ai_service import check_openai_api_key, generate_ai_content_idea
 # We import FastAPI from the fastapi package.
 # FastAPI is the framework that helps us create API endpoints.
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 
 # Session is used for type hints for database sessions.
 from sqlalchemy.orm import Session
@@ -244,8 +244,12 @@ def generate_ideas(
         # Step 4: If sources already exist, use them for idea generation.
         sources_for_idea = existing_sources
 
-    # Step 5: Generate a structured fake AI result using the sources.
-    idea_data = generate_fake_content_idea(topic, sources_for_idea)
+    # Step 5: Generate a structured AI result using the retrieved sources.
+    # This is our first real RAG + OpenAI step.
+    try:
+        idea_data = generate_ai_content_idea(topic, sources_for_idea)
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error))
 
     # Step 6: Convert the generated idea into a SQLAlchemy TrendIdea object.
     new_trend_idea = models.TrendIdea(
