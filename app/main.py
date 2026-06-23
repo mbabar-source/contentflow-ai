@@ -15,6 +15,8 @@ from app import models
 # We import schemas for request and response validation.
 from app import schemas
 
+from app.online_collector import check_tavily_api_key, collect_online_sources
+
 # This creates the database tables from our SQLAlchemy models.
 # If the tables already exist, SQLAlchemy will not create them again.
 Base.metadata.create_all(bind=engine)
@@ -203,8 +205,9 @@ def get_trend_ideas(db: Session = Depends(get_db)):
 
 
 # This endpoint generates content ideas for a topic.
-# It first checks saved sources. If no sources exist, it collects simulated sources automatically.
-@app.post("/generate-ideas", response_model=schemas.TrendIdeaResponse)
+# It first checks saved sources. If no sources exist, it collects online sources with Tavily automatically.
+@app.post("/generate-ideas",
+response_model=schemas.TrendIdeaResponse)
 def generate_ideas(
     request: schemas.TopicRequest,
     db: Session = Depends(get_db)
@@ -217,9 +220,16 @@ def generate_ideas(
         models.Source.topic == topic
     ).all()
 
-    # Step 3: If no sources exist for this topic, collect simulated sources automatically.
+    # Step 3: If no sources exist for this topic, collect real online sources with Tavily automatically.
     if not existing_sources:
-        collected_sources = simulate_source_collection(topic)
+        try:
+            collected_sources = collect_online_sources(topic)
+        except Exception as error:
+            raise HTTPException(status_code=500, detail=f"Online source collection failed: {error}")
+
+        if not collected_sources:
+            raise HTTPException(status_code=404, detail="No online sources were found for this topic.")
+
         saved_sources = []
 
         for source_data in collected_sources:
@@ -277,3 +287,19 @@ def generate_ideas(
 @app.get("/check-openai-key")
 def check_openai_key():
     return check_openai_api_key()
+
+# This endpoint checks whether the Tavily API key is loaded.
+@app.get("/check-tavily-key")
+def check_tavily_key():
+    return check_tavily_api_key()
+
+# This endpoint tests online source collection with Tavily.
+# It does not save anything to the database yet.
+@app.post("/test-online-sources")
+def test_online_sources(request: schemas.TopicRequest):
+    online_sources = collect_online_sources(request.topic)
+    return {
+        "topic": request.topic,
+        "source_count": len(online_sources),
+        "sources": online_sources,
+    }
