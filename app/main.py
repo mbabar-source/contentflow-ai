@@ -1,3 +1,5 @@
+
+from app.agent_service import check_deepagents_ready, run_simple_trend_agent
 from app.ai_service import check_openai_api_key, generate_ai_content_idea
 # We import FastAPI from the fastapi package.
 # FastAPI is the framework that helps us create API endpoints.
@@ -302,4 +304,73 @@ def test_online_sources(request: schemas.TopicRequest):
         "topic": request.topic,
         "source_count": len(online_sources),
         "sources": online_sources,
+    }
+
+# This endpoint checks whether Deepagents can use the OpenAI API.
+# It does not run an agent yet.
+@app.get("/check-deepagents")
+def check_deepagents():
+    return check_deepagents_ready()
+
+# This endpoint tests the DeepAgent analysis workflow.
+# It uses saved sources or collects online sources if none exist.
+# It does not save the agent result into the database yet.
+@app.post("/test-agent-analysis")
+def test_agent_analysis(
+    request: schemas.TopicRequest,
+    db: Session = Depends(get_db)
+):
+    # Step 1: Get the topic from the request body.
+    topic = request.topic
+
+    # Step 2: Search existing sources in the database.
+    existing_sources = db.query(models.Source).filter(
+        models.Source.topic == topic
+    ).all()
+
+    # Step 3: If no sources exist, collect online sources with Tavily.
+    if not existing_sources:
+        try:
+            collected_sources = collect_online_sources(topic)
+        except Exception as error:
+            raise HTTPException(status_code=500, detail=f"Online source collection failed: {error}")
+
+        if not collected_sources:
+            raise HTTPException(status_code=404, detail="No online sources were found for this topic.")
+
+        saved_sources = []
+
+        for source_data in collected_sources:
+            new_source = models.Source(
+                title=source_data["title"],
+                body=source_data["body"],
+                source_url=source_data["source_url"],
+                platform=source_data["platform"],
+                topic=source_data["topic"],
+            )
+
+            db.add(new_source)
+            saved_sources.append(new_source)
+
+        db.commit()
+
+        for source in saved_sources:
+            db.refresh(source)
+
+        sources_for_agent = saved_sources
+    else:
+        # Step 4: If sources already exist, use them for agent analysis.
+        sources_for_agent = existing_sources
+
+    # Step 5: Send the topic and sources to the DeepAgent.
+    try:
+        agent_result = run_simple_trend_agent(topic, sources_for_agent)
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"DeepAgent analysis failed: {error}")
+
+    # Step 6: Return the agent analysis.
+    return {
+        "topic": topic,
+        "source_count": len(sources_for_agent),
+        "agent_analysis": agent_result,
     }
