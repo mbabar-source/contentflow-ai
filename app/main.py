@@ -437,3 +437,73 @@ def test_agent_json(
         "agent_json": agent_json,
     }
 
+# This endpoint uses the DeepAgent to generate structured content ideas
+# and saves the result into the trend_ideas table.
+@app.post("/generate-ideas-agent", response_model=schemas.TrendIdeaResponse)
+def generate_ideas_agent(
+    request: schemas.TopicRequest,
+    db: Session = Depends(get_db)
+):
+    # Step 1: Get the topic from the request body.
+    topic = request.topic
+
+    # Step 2: Search existing sources in the database.
+    existing_sources = db.query(models.Source).filter(
+        models.Source.topic == topic
+    ).all()
+
+    # Step 3: If no sources exist, collect online sources with Tavily.
+    if not existing_sources:
+        try:
+            collected_sources = collect_online_sources(topic)
+        except Exception as error:
+            raise HTTPException(status_code=500, detail=f"Online source collection failed: {error}")
+        if not collected_sources:
+            raise HTTPException(status_code=404, detail="No online sources were found for this topic.")
+
+        saved_sources = []
+
+        for source_data in collected_sources:
+            new_source = models.Source(
+                title=source_data["title"],
+                body=source_data["body"],
+                source_url=source_data["source_url"],
+                platform=source_data["platform"],
+                topic=source_data["topic"],
+            )
+            db.add(new_source)
+            saved_sources.append(new_source)
+        db.commit()
+
+        for source in saved_sources:
+            db.refresh(source)
+        sources_for_agent = saved_sources
+    else:
+            # Step 4: If sources already exist, use them for DeepAgent generation.
+            sources_for_agent = existing_sources
+
+        # Step 5: Send topic and sources to the structured DeepAgent.
+    try:
+        idea_data = run_structured_trend_agent(topic, sources_for_agent)
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Structured DeepAgent failed: {error}")
+
+    # Step 6: Create a TrendIdea database object from the DeepAgent result.
+    new_trend_idea = models.TrendIdea(
+        topic=idea_data["topic"],
+        title=idea_data["title"],
+        summary=idea_data["summary"],
+        trend_category=idea_data["trend_category"],
+        linkedin_post_idea=idea_data["linkedin_post_idea"],
+        youtube_video_idea=idea_data["youtube_video_idea"],
+        blog_article_idea=idea_data["blog_article_idea"],
+        source_ids=idea_data["source_ids"],
+    )
+
+    # Step 7: Save the new trend idea into the database.
+    db.add(new_trend_idea)
+    db.commit()
+    db.refresh(new_trend_idea)
+
+    # Step 8: Return the saved database object.
+    return new_trend_idea
