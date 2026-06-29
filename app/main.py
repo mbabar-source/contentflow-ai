@@ -1,5 +1,5 @@
 
-from app.agent_service import check_deepagents_ready, run_simple_trend_agent
+from app.agent_service import check_deepagents_ready, run_simple_trend_agent, run_structured_trend_agent
 from app.ai_service import check_openai_api_key, generate_ai_content_idea
 # We import FastAPI from the fastapi package.
 # FastAPI is the framework that helps us create API endpoints.
@@ -374,3 +374,66 @@ def test_agent_analysis(
         "source_count": len(sources_for_agent),
         "agent_analysis": agent_result,
     }
+
+# This endpoint tests whether the DeepAgent can return structured JSON.
+# It uses saved sources or collects online sources if none exist.
+# it does not save the result into database yet.
+@app.post("/test-agent-json")
+def test_agent_json(
+        request: schemas.TopicRequest,
+        db: Session = Depends(get_db)
+):
+    # Step 1: Get the topic from request body.
+    topic = request.topic
+
+    # Step 2: Search existing sources in the database.
+    existing_sources = db.query(models.Source).filter(
+        models.Source.topic == topic
+    ).all()
+
+    # Step 3: If no sources exist, collect online sources with Tavily.
+    if not existing_sources:
+        try:
+            collected_sources = collect_online_sources(topic)
+        except Exception as error:
+            raise HTTPException(status_code=500, detail=f"Online source collection failed: {error}")
+
+        if not collected_sources:
+            raise HTTPException(status_code=404, detail="No online sources were found for this topic.")
+
+        saved_sources = []
+
+        for source_data in collected_sources:
+            new_source = models.Source(
+                title=source_data["title"],
+                body=source_data["body"],
+                source_url=source_data["source_url"],
+                platform=source_data["platform"],
+                topic=source_data["topic"],
+            )
+
+            db.add(new_source)
+            saved_sources.append(new_source)
+
+        db.commit()
+
+        for source in saved_sources:
+            db.refresh(source)
+
+        sources_for_agent = saved_sources
+
+    else:
+        # Step 4: If sources already exist, use them for agent JSON generation.
+        sources_for_agent = existing_sources
+    # Step 5: Send topic and sources to the structured DeepAgent.
+    try:
+        agent_json = run_structured_trend_agent(topic, sources_for_agent)
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Structured DeepAgent failed: {error}")
+    # Step 6: Return the structured JSON result.
+    return {
+        "topic": topic,
+        "source_count": len(sources_for_agent),
+        "agent_json": agent_json,
+    }
+
