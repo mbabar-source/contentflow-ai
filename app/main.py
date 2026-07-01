@@ -439,7 +439,7 @@ def test_agent_json(
 
 # This endpoint uses the DeepAgent to generate structured content ideas
 # and saves the result into the trend_ideas table.
-@app.post("/generate-ideas-agent", response_model=schemas.TrendIdeaResponse)
+@app.post("/generate-ideas-agent")
 def generate_ideas_agent(
     request: schemas.TopicRequest,
     db: Session = Depends(get_db)
@@ -505,5 +505,20 @@ def generate_ideas_agent(
     db.commit()
     db.refresh(new_trend_idea)
 
-    # Step 8: Return the saved database object.
-    return new_trend_idea
+    # Step 8: Prepare source information for the API response.
+    # This helps users see which source URLs were used by the DeepAgent.
+    sources_used = [
+        {
+            "id": source.id,
+            "title": source.title,
+            "platform": source.platform,
+            "source_url": source.source_url,
+        }
+        for source in sources_for_agent
+    ]
+
+    # Step 9: Return the saved database object together with the source URLs.
+    return {
+        "saved_trend_idea": new_trend_idea,
+        "sources_used": sources_used,
+    }
